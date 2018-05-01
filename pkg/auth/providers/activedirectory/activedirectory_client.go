@@ -63,6 +63,7 @@ func (p *adProvider) loginUser(adCredential *v3public.BasicLogin, config *v3.Act
 	}
 	query := "(" + config.UserLoginAttribute + "=" + ldapv2.EscapeFilter(samName) + ")"
 	logrus.Debugf("LDAP Search query: {%s}", query)
+	// REMOVE-COMMENT: leave scope-whole subtree
 	search := ldapv2.NewSearchRequest(config.UserSearchBase,
 		ldapv2.ScopeWholeSubtree, ldapv2.NeverDerefAliases, 0, 0, false,
 		query,
@@ -148,6 +149,7 @@ func (p *adProvider) getPrincipalsFromSearchResult(result *ldapv2.SearchResult, 
 
 func (p *adProvider) getPrincipal(distinguishedName string, scope string, config *v3.ActiveDirectoryConfig, caPool *x509.CertPool) (*v3.Principal, error) {
 	var search *ldapv2.SearchRequest
+	var filter string
 	if !slice.ContainsString(scopes, scope) {
 		return nil, fmt.Errorf("Invalid scope")
 	}
@@ -171,7 +173,13 @@ func (p *adProvider) getPrincipal(distinguishedName string, scope string, config
 		return nil, nil
 	}
 
-	filter := "(" + ObjectClassAttribute + "=*)"
+	if strings.EqualFold(UserScope, scope) {
+		filter = "(" + ObjectClassAttribute + "=" + config.UserObjectClass + ")"
+	} else {
+		filter = "(" + ObjectClassAttribute + "=" + config.GroupObjectClass + ")"
+	}
+
+	//filter := "(" + ObjectClassAttribute + "=*)"
 	logrus.Debugf("Query for getPrincipal(%s): %s", distinguishedName, filter)
 	lConn, err := ldap.NewLDAPConn(config, caPool)
 	if err != nil {
@@ -205,12 +213,12 @@ func (p *adProvider) getPrincipal(distinguishedName string, scope string, config
 
 	if strings.EqualFold(UserScope, scope) {
 		search = ldapv2.NewSearchRequest(distinguishedName,
-			ldapv2.ScopeWholeSubtree, ldapv2.NeverDerefAliases, 0, 0, false,
+			ldapv2.ScopeBaseObject, ldapv2.NeverDerefAliases, 0, 0, false,
 			filter,
 			ldap.GetUserSearchAttributes(MemberOfAttribute, ObjectClassAttribute, config), nil)
 	} else {
 		search = ldapv2.NewSearchRequest(distinguishedName,
-			ldapv2.ScopeWholeSubtree, ldapv2.NeverDerefAliases, 0, 0, false,
+			ldapv2.ScopeBaseObject, ldapv2.NeverDerefAliases, 0, 0, false,
 			filter,
 			ldap.GetGroupSearchAttributes(MemberOfAttribute, ObjectClassAttribute, config), nil)
 	}
@@ -336,11 +344,13 @@ func (p *adProvider) searchGroup(name string, config *v3.ActiveDirectoryConfig, 
 	return p.searchLdap(query, GroupScope, config, caPool)
 }
 
+// REMOVE COMMENT: this can have Scope-WholeSubtree
 func (p *adProvider) searchLdap(query string, scope string, config *v3.ActiveDirectoryConfig, caPool *x509.CertPool) ([]v3.Principal, error) {
 	principals := []v3.Principal{}
 	var search *ldapv2.SearchRequest
 
 	searchDomain := config.UserSearchBase
+	// REMOVE COMMENT: leave scope as is
 	if strings.EqualFold(UserScope, scope) {
 		search = ldapv2.NewSearchRequest(searchDomain,
 			ldapv2.ScopeWholeSubtree, ldapv2.NeverDerefAliases, 0, 0, false,
